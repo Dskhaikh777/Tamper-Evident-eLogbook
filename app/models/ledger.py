@@ -35,6 +35,8 @@ class LogRecord(Base):
         comment="Type of action, e.g. PM, Calibration, Inspection",
     )
     data_payload = Column(Text, nullable=False)
+    public_key = Column(String(64), nullable=False, comment="Hex-encoded Ed25519 public key")
+    signature = Column(String(128), nullable=False, comment="Hex-encoded Ed25519 signature")
     previous_hash = Column(String(128), nullable=False)
     current_hash = Column(String(128), nullable=False, unique=True)
 

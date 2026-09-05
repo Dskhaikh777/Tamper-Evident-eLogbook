@@ -2,7 +2,7 @@
 Database configuration and session management.
 
 Reads DATABASE_URL from the .env file and configures a SQLAlchemy engine
-with a local SQLite database as the default.
+targeting a PostgreSQL database.
 """
 
 import os
@@ -13,17 +13,19 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Load environment variables from .env file
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./elogbook.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# For SQLite, we need connect_args to allow multi-threaded access
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        echo=False,
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL environment variable is not set. "
+        "Please configure it in your .env file."
     )
-else:
-    engine = create_engine(DATABASE_URL, echo=False)
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,  # Verify connections are alive before using them
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
