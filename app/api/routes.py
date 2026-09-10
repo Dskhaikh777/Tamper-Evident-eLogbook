@@ -15,6 +15,9 @@ from datetime import datetime, timezone
 from typing import List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.api.auth import require_role
+from app.models.user import User
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -60,7 +63,11 @@ router = APIRouter()
         "accepting the record."
     ),
 )
-def create_log(entry: LogRecordCreate, db: Session = Depends(get_db)):
+def create_log(
+    entry: LogRecordCreate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role(["operator", "admin"])),
+):
     """
     Create and persist a new log record in the hash chain.
 
@@ -219,7 +226,10 @@ def get_all_logs(db: Session = Depends(get_db)):
         "current_hash.  Halts immediately on the first discrepancy."
     ),
 )
-def verify_ledger(db: Session = Depends(get_db)):
+def verify_ledger(
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role(["auditor", "admin"])),
+):
     """
     Cryptographic tamper-check engine.
 
@@ -404,7 +414,10 @@ def honeypot_trap(db: Session = Depends(get_db)):
         "breached node with access counts and timestamps."
     ),
 )
-def threat_status(db: Session = Depends(get_db)):
+def threat_status(
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role(["admin"])),
+):
     """
     SOC threat-status scanner.
 

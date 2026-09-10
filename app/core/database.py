@@ -13,13 +13,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Load environment variables from .env file
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    raise ValueError(
-        "DATABASE_URL environment variable is not set. "
-        "Please configure it in your .env file."
-    )
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@localhost/elogbook_db",
+)
 
 engine = create_engine(
     DATABASE_URL,
