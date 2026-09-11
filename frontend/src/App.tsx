@@ -1,0 +1,48 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { ThemeProvider } from "@/components/theme/ThemeProvider"
+import { AppShell } from "@/components/layout/AppShell"
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
+import { KeysPage } from "@/pages/KeysPage"
+import { NewLogEntryPage } from "@/pages/NewLogEntryPage"
+import { Toaster } from "@/components/ui/sonner"
+import { LoginPage } from "@/pages/LoginPage"
+
+import { LedgerViewPage } from "@/pages/LedgerViewPage"
+import { ThreatDashboardPage } from "@/pages/ThreatDashboardPage"
+import { OfflineScannerPage } from "@/pages/OfflineScannerPage"
+
+function App() {
+  return (
+    <ThemeProvider defaultTheme="system" storageKey="elogbook-ui-theme">
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route path="/" element={<AppShell />}>
+            <Route index element={<Navigate to="/keys" replace />} />
+            
+            {/* All authenticated users can access keys and scan */}
+            <Route element={<ProtectedRoute allowedRoles={['OPERATOR', 'ADMIN', 'AUDITOR', 'operator', 'admin', 'auditor']} />}>
+              <Route path="keys" element={<KeysPage />} />
+              <Route path="scan" element={<OfflineScannerPage />} />
+            </Route>
+
+            {/* OPERATOR Only */}
+            <Route element={<ProtectedRoute allowedRoles={['OPERATOR', 'operator']} />}>
+              <Route path="entry" element={<NewLogEntryPage />} />
+            </Route>
+
+            {/* ADMIN / AUDITOR Only */}
+            <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR', 'admin', 'auditor']} />}>
+              <Route path="ledger" element={<LedgerViewPage />} />
+              <Route path="threats" element={<ThreatDashboardPage />} />
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+      <Toaster />
+    </ThemeProvider>
+  )
+}
+
+export default App
