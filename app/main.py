@@ -37,6 +37,8 @@ async def lifespan(app: FastAPI):
     yield  # application runs here
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="Tamper-Evident eLogbook API",
     lifespan=lifespan,
