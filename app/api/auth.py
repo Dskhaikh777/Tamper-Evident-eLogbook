@@ -1,10 +1,17 @@
 """
 Authentication and Role-Based Access Control (RBAC) engine.
 
+Enterprise pivot changes:
+    - Authentication uses ``employee_id`` (not username).
+    - Soft-deleted users (``is_active=False``) are strictly rejected.
+    - JWT payload embeds ``sub`` (employee_id), ``role``, and ``user_id``
+      for downstream RBAC dependency injection.
+    - The ``setup-users`` seed endpoint is removed — user provisioning
+      is now exclusively via the admin API.
+
 Provides:
     - JWT access-token issuance via OAuth2 password flow.
     - Bcrypt password hashing and verification.
-    - Default user seeding for initial setup.
     - ``get_current_user`` dependency for token validation.
     - ``require_role`` closure dependency for endpoint-level RBAC.
 """
@@ -22,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.user import User
+from app.schemas.user import TokenResponse
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -50,17 +58,17 @@ router = APIRouter()
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def _hash_password(plain: str) -> str:
+def hash_password(plain: str) -> str:
     """Return a bcrypt hash of *plain*."""
     return pwd_context.hash(plain)
 
 
-def _verify_password(plain: str, hashed: str) -> bool:
+def verify_password(plain: str, hashed: str) -> bool:
     """Return ``True`` if *plain* matches *hashed*."""
     return pwd_context.verify(plain, hashed)
 
 
-def _create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Encode a JWT with an expiration claim."""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
@@ -80,8 +88,12 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Decode the JWT, extract the ``sub`` (username), and return the
-    corresponding ``User`` row.  Raises HTTP 401 on any failure.
+    Decode the JWT, extract the ``sub`` (employee_id), and return the
+    corresponding active ``User`` row.
+
+    Raises:
+        HTTP 401 — invalid/expired token or unknown employee_id.
+        HTTP 403 — user account has been deactivated (soft-deleted).
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,15 +103,29 @@ def get_current_user(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
+        employee_id: str | None = payload.get("sub")
+        if employee_id is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    user: User | None = db.query(User).filter(User.username == username).first()
+    user: User | None = (
+        db.query(User)
+        .filter(User.employee_id == employee_id)
+        .first()
+    )
     if user is None:
         raise credentials_exception
+
+    # ── Soft-delete gate ─────────────────────────────────────────────
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Account deactivated. Contact your administrator to "
+                "restore access."
+            ),
+        )
 
     return user
 
@@ -140,10 +166,11 @@ def require_role(allowed_roles: List[str]):
 
 @router.post(
     "/token",
+    response_model=TokenResponse,
     summary="Obtain a JWT access token",
     description=(
-        "Authenticate with username and password via the OAuth2 password "
-        "flow. Returns a Bearer token and the user's RBAC role."
+        "Authenticate with employee_id and password via the OAuth2 password "
+        "flow. Returns a Bearer token, the user's RBAC role, and identity."
     ),
 )
 def login_for_access_token(
@@ -153,76 +180,55 @@ def login_for_access_token(
     """
     Validate credentials and issue a signed JWT.
 
+    The OAuth2 spec mandates ``username`` / ``password`` form fields,
+    so the client sends ``employee_id`` in the ``username`` field.
+
     The token payload includes:
-        - ``sub`` – the authenticated username.
-        - ``role`` – the user's RBAC role (for convenience; authoritative
-          role checks always query the database).
+        - ``sub``       – the authenticated employee_id.
+        - ``role``      – the user's RBAC role.
+        - ``user_id``   – the database PK (for FK injection on log creation).
+
+    Security gates:
+        1. Unknown employee_id → 401.
+        2. Wrong password → 401.
+        3. Deactivated account (is_active=False) → 403.
     """
+    # OAuth2PasswordRequestForm uses `username` field — we map it to employee_id.
     user: User | None = (
-        db.query(User).filter(User.username == form_data.username).first()
+        db.query(User)
+        .filter(User.employee_id == form_data.username)
+        .first()
     )
 
-    if not user or not _verify_password(form_data.password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password.",
+            detail="Incorrect employee ID or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = _create_access_token(
-        data={"sub": user.username, "role": user.role},
+    # ── Soft-delete gate ─────────────────────────────────────────────
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Account deactivated. This employee ID has been disabled "
+                "by an administrator. Contact your supervisor."
+            ),
+        )
+
+    access_token = create_access_token(
+        data={
+            "sub": user.employee_id,
+            "role": user.role,
+            "user_id": user.id,
+        },
     )
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "role": user.role,
-    }
-
-
-@router.post(
-    "/setup-users",
-    summary="Seed default users",
-    description=(
-        "Populate the database with three default users (admin, auditor, "
-        "operator) if the users table is empty. Intended for first-time "
-        "setup only."
-    ),
-)
-def setup_default_users(db: Session = Depends(get_db)):
-    """
-    Create default users with bcrypt-hashed passwords if none exist.
-
-    This is a convenience endpoint for initial bootstrapping.  In a
-    production deployment, disable or protect this endpoint after first
-    use.
-    """
-    existing_count: int = db.query(User).count()
-    if existing_count > 0:
-        return {
-            "message": "Users already exist. Setup skipped.",
-            "user_count": existing_count,
-        }
-
-    default_users = [
-        {"username": "admin", "password": "admin@secure123", "role": "admin"},
-        {"username": "auditor", "password": "auditor@secure123", "role": "auditor"},
-        {"username": "operator", "password": "operator@secure123", "role": "operator"},
-    ]
-
-    created = []
-    for u in default_users:
-        user = User(
-            username=u["username"],
-            hashed_password=_hash_password(u["password"]),
-            role=u["role"],
-        )
-        db.add(user)
-        created.append({"username": u["username"], "role": u["role"]})
-
-    db.commit()
-
-    return {
-        "message": f"Successfully created {len(created)} default users.",
-        "users": created,
-    }
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        role=user.role,
+        employee_id=user.employee_id,
+        full_name=user.full_name,
+    )

@@ -1,33 +1,52 @@
 """
-Pydantic schemas for LogRecord input validation and response serialization.
+Pydantic schemas for the AuditLog (per-device tamper-evident hash chain).
+
+Replaces the former ``LogRecord`` schemas to align with the asset-centric
+ledger architecture.  Key changes:
+
+  - ``LogCreate`` now requires a ``device_id`` to target a specific chain.
+  - ``LogResponse`` includes both ``device_id`` and ``operator_id`` as
+    typed foreign-key references.
+  - Verification schemas are updated for per-device chain verification.
+
+Threat-monitoring schemas (HoneyToken) are preserved unchanged.
 """
 
 from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class LogRecordCreate(BaseModel):
-    """
-    Schema for creating a new log record.
+# ═════════════════════════════════════════════════════════════════════════════
+# AUDIT LOG — INPUT SCHEMAS
+# ═════════════════════════════════════════════════════════════════════════════
 
-    The client supplies the operational fields along with an Ed25519
-    ``public_key`` and ``signature`` for non-repudiation.  The server
-    generates the timestamp, hashes, and ID automatically.
+
+class LogCreate(BaseModel):
+    """
+    Schema for appending a new entry to a device's hash chain.
+
+    The client provides:
+      - ``device_id`` — which device's chain to append to.
+      - ``action_type`` / ``data_payload`` — the operational record.
+      - ``public_key`` / ``signature`` — Ed25519 non-repudiation proof.
+
+    The server injects the authenticated ``operator_id`` from the JWT,
+    generates the timestamp, computes hashes, and persists the block.
     """
 
-    operator_id: str = Field(
+    device_id: UUID = Field(
         ...,
-        min_length=1,
-        max_length=100,
-        description="Unique identifier of the operator creating the entry.",
-        examples=["OP-4521"],
+        description="UUID of the target device (from the QR sticker).",
+        examples=["550e8400-e29b-41d4-a716-446655440000"],
     )
     action_type: str = Field(
         ...,
         min_length=1,
         max_length=50,
         description="Category of the action performed.",
-        examples=["PM", "Calibration", "Inspection"],
+        examples=["PM", "Calibration", "Inspection", "Cleaning"],
     )
     data_payload: str = Field(
         ...,
@@ -42,7 +61,7 @@ class LogRecordCreate(BaseModel):
         description=(
             "Hex-encoded 32-byte Ed25519 public key of the signing operator."
         ),
-        examples=["a1b2c3d4e5f6..."],
+        examples=["a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"],
     )
     signature: str = Field(
         ...,
@@ -50,24 +69,30 @@ class LogRecordCreate(BaseModel):
         max_length=128,
         description=(
             "Hex-encoded 64-byte Ed25519 signature over the canonical "
-            "payload: operator_id || \\x1f || action_type || \\x1f || data_payload."
+            "payload: employee_id || \\x1f || action_type || \\x1f || data_payload."
         ),
-        examples=["deadbeef0123..."],
+        examples=["deadbeef0123" + "0" * 116],
     )
 
 
-class LogRecordResponse(BaseModel):
+# ═════════════════════════════════════════════════════════════════════════════
+# AUDIT LOG — OUTPUT / RESPONSE SCHEMAS
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class LogResponse(BaseModel):
     """
-    Schema for returning a log record to the client.
+    Full audit-log entry as returned to the client.
 
     Includes all server-generated fields (id, timestamp, hashes)
-    alongside the original input data and the operator's digital signature.
+    alongside the original input data and cryptographic proof.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    operator_id: str
+    device_id: UUID
+    operator_id: int
     timestamp: datetime
     action_type: str
     data_payload: str
@@ -77,25 +102,13 @@ class LogRecordResponse(BaseModel):
     current_hash: str
 
 
-class KeyPairResponse(BaseModel):
-    """Response schema for the key generation utility endpoint."""
-
-    private_key: str = Field(
-        ..., description="Hex-encoded 32-byte Ed25519 private key."
-    )
-    public_key: str = Field(
-        ..., description="Hex-encoded 32-byte Ed25519 public key."
-    )
-    sample_payload: str = Field(
-        ..., description="The canonical string that was signed."
-    )
-    sample_signature: str = Field(
-        ..., description="Hex-encoded Ed25519 signature of the sample payload."
-    )
+# ═════════════════════════════════════════════════════════════════════════════
+# LEDGER VERIFICATION SCHEMAS
+# ═════════════════════════════════════════════════════════════════════════════
 
 
 class LedgerVerificationSuccess(BaseModel):
-    """Response schema when the entire ledger hash-chain is intact."""
+    """Response schema when a device's hash chain is fully intact."""
 
     status: str = Field(
         default="valid",
@@ -105,7 +118,7 @@ class LedgerVerificationSuccess(BaseModel):
     message: str = Field(
         ...,
         description="Human-readable verification summary.",
-        examples=["Ledger is 100% valid. All 42 blocks verified."],
+        examples=["Device chain is 100% valid. All 42 blocks verified."],
     )
     blocks_verified: int = Field(
         ...,
@@ -115,7 +128,7 @@ class LedgerVerificationSuccess(BaseModel):
 
 
 class LedgerVerificationFailure(BaseModel):
-    """Response schema when tamper evidence is detected in the ledger."""
+    """Response schema when tamper evidence is detected in a device chain."""
 
     status: str = Field(
         default="tampered",
@@ -140,7 +153,32 @@ class LedgerVerificationFailure(BaseModel):
     )
 
 
-# ── Threat monitoring schemas ────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# KEY GENERATION (Development Utility)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class KeyPairResponse(BaseModel):
+    """Response schema for the key generation utility endpoint."""
+
+    private_key: str = Field(
+        ..., description="Hex-encoded 32-byte Ed25519 private key."
+    )
+    public_key: str = Field(
+        ..., description="Hex-encoded 32-byte Ed25519 public key."
+    )
+    sample_payload: str = Field(
+        ..., description="The canonical string that was signed."
+    )
+    sample_signature: str = Field(
+        ..., description="Hex-encoded Ed25519 signature of the sample payload."
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# THREAT MONITORING — Honey-Token Schemas (Preserved)
+# ═════════════════════════════════════════════════════════════════════════════
+
 
 class BreachedDecoyDetail(BaseModel):
     """Detail of a single breached honey-token."""
@@ -197,4 +235,3 @@ class ThreatStatusBreached(BaseModel):
     breached_nodes: list[BreachedDecoyDetail] = Field(
         ..., description="Details of each breached decoy node."
     )
-

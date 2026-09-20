@@ -9,6 +9,11 @@ Ed25519 digital signatures are required on every new entry for
 operator non-repudiation.
 
 Includes active threat monitoring via honey-token decoy endpoints.
+
+NOTE: The log-creation and verification endpoints in this file still
+use the OLD global-chain logic.  They will be fully rewritten in
+Phase 3 to operate per-device.  The imports and model references have
+been updated to compile against the new schema.
 """
 
 from datetime import datetime, timezone
@@ -23,11 +28,11 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.hashing import create_block_hash
-from app.models.ledger import LogRecord
+from app.models.ledger import AuditLog, GENESIS_HASH
 from app.models.honey_token import HoneyToken
 from app.schemas.ledger import (
-    LogRecordCreate,
-    LogRecordResponse,
+    LogCreate,
+    LogResponse,
     KeyPairResponse,
     LedgerVerificationSuccess,
     LedgerVerificationFailure,
@@ -42,51 +47,42 @@ from app.utils.crypto_keys import (
     verify_signature,
 )
 
-# Genesis hash – used as `previous_hash` for the very first record.
-GENESIS_HASH = "0" * 64
-
 router = APIRouter()
 
 
 # ── POST /logs/ ──────────────────────────────────────────────────────────────
+# NOTE: This endpoint will be rewritten in Phase 3 for per-device chains.
+# It is temporarily updated to compile against the new models.
 
 @router.post(
     "/logs/",
-    response_model=LogRecordResponse,
+    response_model=LogResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new log record",
     description=(
         "Append a new entry to the tamper-evident logbook. "
         "The client must include a valid Ed25519 signature over the "
-        "canonical payload (operator_id || action_type || data_payload) "
-        "for non-repudiation. The server verifies the signature before "
-        "accepting the record."
+        "canonical payload for non-repudiation. The server verifies "
+        "the signature before accepting the record. "
+        "NOTE: Will be rewritten in Phase 3 for per-device chains."
     ),
 )
 def create_log(
-    entry: LogRecordCreate,
+    entry: LogCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(require_role(["operator", "admin"])),
+    current_user: User = Depends(require_role(["operator", "admin"])),
 ):
     """
     Create and persist a new log record in the hash chain.
 
-    0. **Verify the Ed25519 signature** — reconstruct the canonical
-       signing payload from the submitted fields, then verify the
-       ``signature`` against the ``public_key``.  Reject with
-       HTTP 401 if invalid.
-    1. Fetch the most recent record's ``current_hash`` to use as this
-       record's ``previous_hash``.  If the ledger is empty the genesis
-       hash (64 zeros) is used instead.
-    2. Generate the current UTC timestamp.
-    3. Compute ``current_hash`` via SHA3-256 over all record fields plus
-       the ``previous_hash``.
-    4. Persist the new ``LogRecord`` and return it.
+    This is a TRANSITIONAL implementation — it appends to the correct
+    device's chain using the new model structure, but the full per-device
+    flow (dynamic state injection, etc.) comes in Phase 3.
     """
 
     # --- 0. Verify the Ed25519 digital signature --------------------------
     canonical_payload = build_signing_payload(
-        operator_id=entry.operator_id,
+        operator_id=current_user.employee_id,
         action_type=entry.action_type,
         data_payload=entry.data_payload,
     )
@@ -105,10 +101,11 @@ def create_log(
             ),
         )
 
-    # --- 1. Determine the previous hash ----------------------------------
+    # --- 1. Determine the previous hash (PER-DEVICE) ---------------------
     latest_record = (
-        db.query(LogRecord)
-        .order_by(LogRecord.id.desc())
+        db.query(AuditLog)
+        .filter(AuditLog.device_id == entry.device_id)
+        .order_by(AuditLog.id.desc())
         .first()
     )
     previous_hash = latest_record.current_hash if latest_record else GENESIS_HASH
@@ -118,7 +115,7 @@ def create_log(
 
     # --- 3. Compute the current hash --------------------------------------
     current_hash = create_block_hash(
-        operator_id=entry.operator_id,
+        operator_id=current_user.employee_id,
         timestamp=timestamp.isoformat(),
         action_type=entry.action_type,
         payload=entry.data_payload,
@@ -126,8 +123,9 @@ def create_log(
     )
 
     # --- 4. Create, persist, and return the record ------------------------
-    new_record = LogRecord(
-        operator_id=entry.operator_id,
+    new_record = AuditLog(
+        device_id=entry.device_id,
+        operator_id=current_user.id,
         timestamp=timestamp,
         action_type=entry.action_type,
         data_payload=entry.data_payload,
@@ -169,7 +167,7 @@ def generate_keys():
 
     # Fixed test values — the caller must use these exact strings
     # with the returned signature for it to verify.
-    sample_operator = "OP-TEST"
+    sample_operator = "EMP-TEST"
     sample_action = "Inspection"
     sample_data = "Test entry for Ed25519 signature verification."
 
@@ -192,11 +190,12 @@ def generate_keys():
 
 @router.get(
     "/logs/",
-    response_model=List[LogRecordResponse],
+    response_model=List[LogResponse],
     summary="Retrieve the complete ledger history",
     description=(
         "Return every log record in the ledger, ordered by block ID in "
-        "ascending order (genesis → latest)."
+        "ascending order (genesis → latest). "
+        "NOTE: Will be scoped per-device in Phase 3."
     ),
 )
 def get_all_logs(db: Session = Depends(get_db)):
@@ -204,26 +203,24 @@ def get_all_logs(db: Session = Depends(get_db)):
     Fetch and return the full, ordered ledger for display or audit.
     """
     records = (
-        db.query(LogRecord)
-        .order_by(LogRecord.id.asc())
+        db.query(AuditLog)
+        .order_by(AuditLog.id.asc())
         .all()
     )
     return records
 
 
 # ── GET /verify-ledger/ ─────────────────────────────────────────────────────
+# NOTE: Will be rewritten in Phase 3 for per-device verification.
 
 @router.get(
     "/verify-ledger/",
     response_model=Union[LedgerVerificationSuccess, LedgerVerificationFailure],
     summary="Verify the integrity of the entire ledger",
     description=(
-        "Walk the hash chain from genesis to the latest block.  "
-        "For every block, recalculate the SHA3-256 digest using the same "
-        "field order and delimiter used during creation, then verify that "
-        "(a) the recalculated hash matches the stored current_hash, and "
-        "(b) the block's previous_hash matches the preceding block's "
-        "current_hash.  Halts immediately on the first discrepancy."
+        "Walk the hash chain from genesis to the latest block. "
+        "NOTE: This currently verifies ALL logs globally. "
+        "Phase 3 will scope this per-device."
     ),
 )
 def verify_ledger(
@@ -231,27 +228,13 @@ def verify_ledger(
     _current_user: User = Depends(require_role(["auditor", "admin"])),
 ):
     """
-    Cryptographic tamper-check engine.
+    Cryptographic tamper-check engine (transitional — global chain).
 
-    Iterates every record in ascending ID order and performs two checks
-    per block:
-
-    1. **Hash integrity** – recompute the hash from the stored fields
-       (operator_id, timestamp ISO string, action_type, data_payload,
-       previous_hash) using the same ``\\x1f``-delimited concatenation
-       and SHA3-256 algorithm.  Compare to ``current_hash``.
-    2. **Chain linkage** – confirm ``record.previous_hash`` equals the
-       ``current_hash`` of the immediately preceding record (or the
-       genesis hash for the first block).
-
-    Returns 200 with a success payload if the chain is intact, or 200
-    with a failure payload (including the tampered block ID) on the
-    first mismatch.
+    Will be rewritten in Phase 3 to verify per-device chains.
     """
-
     records = (
-        db.query(LogRecord)
-        .order_by(LogRecord.id.asc())
+        db.query(AuditLog)
+        .order_by(AuditLog.id.asc())
         .all()
     )
 
@@ -283,15 +266,9 @@ def verify_ledger(
             )
 
         # ── Check 2: Hash integrity ──────────────────────────────────
-        # Recompute the hash using the EXACT same inputs as creation.
-        # The timestamp was originally hashed via
-        #   datetime.now(timezone.utc).isoformat()
-        # which produces a string with "+00:00".  PostgreSQL may return
-        # the timestamp in the server's local timezone (e.g. "+05:30"),
-        # so we must normalize back to UTC before calling .isoformat().
         utc_timestamp = record.timestamp.astimezone(timezone.utc)
         recalculated_hash = create_block_hash(
-            operator_id=record.operator_id,
+            operator_id=record.operator.employee_id if record.operator else "UNKNOWN",
             timestamp=utc_timestamp.isoformat(),
             action_type=record.action_type,
             payload=record.data_payload,
@@ -460,5 +437,3 @@ def threat_status(
             BreachedDecoyDetail.model_validate(t) for t in breached
         ],
     )
-
-

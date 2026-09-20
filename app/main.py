@@ -10,9 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import Base, engine, SessionLocal
 from app.api.routes import router
 from app.api.auth import router as auth_router
+from app.api.admin import router as admin_router
+from app.api.devices import router as devices_router
+from app.api.ledger import router as ledger_router
 
 # Import all models so Base.metadata.create_all discovers them.
-from app.models.ledger import LogRecord          # noqa: F401
+from app.models.ledger import AuditLog           # noqa: F401
+from app.models.device import Device             # noqa: F401
 from app.models.honey_token import HoneyToken    # noqa: F401
 from app.models.user import User                 # noqa: F401
 
@@ -37,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield  # application runs here
 
 
-from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI(
     title="Tamper-Evident eLogbook API",
@@ -58,3 +62,12 @@ app.include_router(router, prefix="/api/v1")
 
 # Mount the authentication router.
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+
+# Mount the admin provisioning router.
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
+
+# Mount the device overview router (Operator dashboard).
+app.include_router(devices_router, prefix="/api/v1/devices", tags=["Devices"])
+
+# Mount the per-device ledger router (Append + Auditor chain export).
+app.include_router(ledger_router, prefix="/api/v1/ledger", tags=["Ledger"])
