@@ -44,12 +44,14 @@ export function generateKeyPair(): { privateKeyHex: string; publicKeyHex: string
   }
 }
 
-/**
- * Construct the canonical string matching the backend's format exactly.
- * (operator_id || \x1f || action_type || \x1f || data_payload)
- */
 export function createCanonicalPayload(data: LogPayloadFields): string {
-  return [data.operator_id, data.action_type, data.data_payload].join(FIELD_SEPARATOR)
+  // Enforce deterministic JSON serialization with alphabetical keys
+  const sortedData = {
+    action_type: data.action_type,
+    data_payload: data.data_payload,
+    operator_id: data.operator_id,
+  }
+  return JSON.stringify(sortedData)
 }
 
 /**
@@ -61,6 +63,8 @@ export function createCanonicalPayload(data: LogPayloadFields): string {
  */
 export async function signPayload(canonicalPayload: string, privateKeyHex: string): Promise<string> {
   const messageBytes = new TextEncoder().encode(canonicalPayload)
+  console.log(`[SIGNING] Canonical Payload String: ${canonicalPayload}`)
+  console.log(`[SIGNING] Payload Bytes:`, messageBytes)
   const privateKeyBytes = hexToBytes(privateKeyHex)
   
   const signatureBytes = await ed.signAsync(messageBytes, privateKeyBytes)
@@ -82,6 +86,9 @@ export async function verifySignature(
 ): Promise<boolean> {
   try {
     const messageBytes = new TextEncoder().encode(canonicalPayload)
+    console.log(`[VERIFYING] Canonical Payload String: ${canonicalPayload}`)
+    console.log(`[VERIFYING] Payload Bytes:`, messageBytes)
+
     const signatureBytes = hexToBytes(signatureHex)
     const publicKeyBytes = hexToBytes(publicKeyHex)
 

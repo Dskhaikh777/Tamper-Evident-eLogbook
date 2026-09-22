@@ -6,13 +6,14 @@ import {
   ScanLine,
   Activity,
   Key,
+  Cpu,
 } from "lucide-react"
 
 const sidebarNavItems = [
   {
-    title: "Operator Entry",
-    href: "/entry",
-    icon: <FileSignature className="w-5 h-5 mr-3" />,
+    title: "Smart Grid",
+    href: "/devices",
+    icon: <Cpu className="w-5 h-5 mr-3" />,
   },
   {
     title: "Audit Ledger",

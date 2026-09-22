@@ -12,7 +12,7 @@ from app.schemas.device import (                    # noqa: F401
     DeviceCreate,
     DeviceResponse,
     DeviceOverviewResponse,
-    LastActionState,
+    LastOperation,
 )
 from app.schemas.ledger import (                    # noqa: F401
     LogCreate,

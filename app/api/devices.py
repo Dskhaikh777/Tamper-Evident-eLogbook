@@ -19,8 +19,7 @@ Performance Notes:
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.device import Device
@@ -29,7 +28,7 @@ from app.models.user import User
 from app.api.auth import require_role
 from app.schemas.device import (
     DeviceOverviewResponse,
-    LastActionState,
+    LastOperation,
 )
 
 router = APIRouter()
@@ -54,7 +53,7 @@ router = APIRouter()
 )
 def get_device_overview(
     db: Session = Depends(get_db),
-    _current_user: User = Depends(require_role(["operator", "admin"])),
+    _current_user: User = Depends(require_role(["admin", "operator", "auditor"])),
 ):
     """
     Build the Operator's device dashboard.
@@ -79,50 +78,32 @@ def get_device_overview(
     if not devices:
         return []
 
-    # ── 2. Subquery: latest log ID per device ────────────────────────────
-    latest_ids_subq = (
-        db.query(
-            AuditLog.device_id,
-            func.max(AuditLog.id).label("max_id"),
-        )
-        .group_by(AuditLog.device_id)
-        .subquery()
-    )
-
-    # ── 3. Batch-fetch those AuditLog rows with operator eager-loaded ────
-    latest_logs = (
-        db.query(AuditLog)
-        .join(
-            latest_ids_subq,
-            AuditLog.id == latest_ids_subq.c.max_id,
-        )
-        .options(joinedload(AuditLog.operator))
-        .all()
-    )
-
-    # ── 4. Build lookup map: device_id → latest AuditLog ─────────────────
-    latest_by_device = {log.device_id: log for log in latest_logs}
-
-    # ── 5. Assemble the response ─────────────────────────────────────────
+    # ── 2. Assemble the response via Python iteration ────────────────────
     result: List[DeviceOverviewResponse] = []
 
     for device in devices:
-        latest_log = latest_by_device.get(device.id)
+        # Fetch the latest log for this specific device
+        latest_log = (
+            db.query(AuditLog)
+            .filter(AuditLog.device_id == device.id)
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
 
         if latest_log and latest_log.operator:
             operator = latest_log.operator
             operator_label = f"{operator.full_name} ({operator.employee_id})"
 
-            last_state = LastActionState(
-                last_action=latest_log.action_type,
-                last_operator_name=operator_label,
-                last_timestamp=latest_log.timestamp,
+            last_operation = LastOperation(
+                action=latest_log.action_type,
+                operator=operator_label,
+                timestamp=latest_log.timestamp,
             )
             status_label = (
                 f"Last: {latest_log.action_type} by {operator.employee_id}"
             )
         else:
-            last_state = None
+            last_operation = None
             status_label = "No Operations Yet"
 
         result.append(
@@ -133,7 +114,7 @@ def get_device_overview(
                 location=device.location,
                 created_at=device.created_at,
                 status_label=status_label,
-                last_state=last_state,
+                last_operation=last_operation,
             )
         )
 

@@ -10,6 +10,8 @@ import { LoginPage } from "@/pages/LoginPage"
 import { LedgerViewPage } from "@/pages/LedgerViewPage"
 import { ThreatDashboardPage } from "@/pages/ThreatDashboardPage"
 import { OfflineScannerPage } from "@/pages/OfflineScannerPage"
+import { DeviceOverview } from "@/pages/DeviceOverview"
+import { AdminDashboard } from "@/pages/AdminDashboard"
 
 function App() {
   return (
@@ -21,21 +23,27 @@ function App() {
           <Route path="/" element={<AppShell />}>
             <Route index element={<Navigate to="/keys" replace />} />
             
-            {/* All authenticated users can access keys and scan */}
+            {/* All authenticated users can access keys, scan, and devices */}
             <Route element={<ProtectedRoute allowedRoles={['OPERATOR', 'ADMIN', 'AUDITOR', 'operator', 'admin', 'auditor']} />}>
               <Route path="keys" element={<KeysPage />} />
               <Route path="scan" element={<OfflineScannerPage />} />
+              <Route path="devices" element={<DeviceOverview />} />
             </Route>
 
             {/* OPERATOR Only */}
             <Route element={<ProtectedRoute allowedRoles={['OPERATOR', 'operator']} />}>
-              <Route path="entry" element={<NewLogEntryPage />} />
+              <Route path="log-entry/:deviceId" element={<NewLogEntryPage />} />
             </Route>
 
             {/* ADMIN / AUDITOR Only */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR', 'admin', 'auditor']} />}>
               <Route path="ledger" element={<LedgerViewPage />} />
               <Route path="threats" element={<ThreatDashboardPage />} />
+            </Route>
+
+            {/* ADMIN Only */}
+            <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'admin']} />}>
+              <Route path="admin" element={<AdminDashboard />} />
             </Route>
           </Route>
         </Routes>

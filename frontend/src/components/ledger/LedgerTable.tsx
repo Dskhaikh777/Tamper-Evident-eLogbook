@@ -1,4 +1,4 @@
-import { useFetchLogsQuery } from "@/services/api/ledgerApi"
+import { useFetchLogsQuery, useGetDevicesOverviewQuery } from "@/services/api/ledgerApi"
 import type { LogEntryResponse } from "@/services/api/ledgerApi"
 import { createCanonicalPayload, verifySignature } from "@/lib/crypto"
 import { toast } from "sonner"
@@ -21,8 +21,9 @@ import { QRCodeGenerator } from "@/components/qr/QRCodeGenerator"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { LedgerVerificationResult } from "@/services/api/ledgerApi"
 
-export function LedgerTable({ verifyData }: { verifyData?: LedgerVerificationResult }) {
-  const { data: logs, isLoading, error } = useFetchLogsQuery()
+export function LedgerTable({ verifyData, selectedDeviceId }: { verifyData?: LedgerVerificationResult, selectedDeviceId?: string }) {
+  const { data: logs, isLoading, error } = useFetchLogsQuery(selectedDeviceId ? { device_id: selectedDeviceId } : undefined)
+  const { data: devices } = useGetDevicesOverviewQuery()
   const [verifyingId, setVerifyingId] = useState<string | null>(null)
 
   const handleVerify = async (log: LogEntryResponse) => {
@@ -30,7 +31,7 @@ export function LedgerTable({ verifyData }: { verifyData?: LedgerVerificationRes
       setVerifyingId(log.id)
       
       const canonicalPayload = createCanonicalPayload({
-        operator_id: log.operator_id,
+        operator_id: log.operator_employee_id,
         action_type: log.action_type,
         data_payload: log.data_payload,
       })
@@ -95,6 +96,11 @@ export function LedgerTable({ verifyData }: { verifyData?: LedgerVerificationRes
   const isGloballyVerified = verifyData?.status === "valid"
   const GENESIS_HASH = "0".repeat(64)
 
+  const getDeviceName = (deviceId: string) => {
+    const device = devices?.find(d => d.id === deviceId)
+    return device ? device.name : deviceId.substring(0, 8) + "..."
+  }
+
   return (
     <Card className="border-emerald-500/20 shadow-md">
       <CardHeader>
@@ -112,6 +118,7 @@ export function LedgerTable({ verifyData }: { verifyData?: LedgerVerificationRes
             <TableHeader>
               <TableRow>
                 <TableHead>Timestamp</TableHead>
+                <TableHead>Device</TableHead>
                 <TableHead>Operator</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Payload</TableHead>
@@ -122,15 +129,14 @@ export function LedgerTable({ verifyData }: { verifyData?: LedgerVerificationRes
             <TableBody>
               {logs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No log entries found.
                   </TableCell>
                 </TableRow>
               ) : (
                 logs.map((log, index) => {
-                  // Verify chain link visually
-                  const prevLog = index > 0 ? logs[index - 1] : null
-                  const isChainedCorrectly = prevLog ? log.previous_hash === prevLog.current_hash : log.previous_hash === GENESIS_HASH
+                  // Verify chain link using backend evaluation
+                  const isChainedCorrectly = log.is_chain_intact
                   
                   const isTampered = verifyData?.status === "tampered" && verifyData.tampered_block_id === Number(log.id)
                   const showVerified = isGloballyVerified && isChainedCorrectly
@@ -140,7 +146,10 @@ export function LedgerTable({ verifyData }: { verifyData?: LedgerVerificationRes
                       <TableCell className="whitespace-nowrap">
                         {format(new Date(log.timestamp), "yyyy-MM-dd HH:mm:ss")}
                       </TableCell>
-                      <TableCell className="font-medium">{log.operator_id}</TableCell>
+                      <TableCell className="font-medium text-blue-600 dark:text-blue-400">
+                        {getDeviceName(log.device_id)}
+                      </TableCell>
+                      <TableCell className="font-medium">{log.operator_employee_id}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{log.action_type}</Badge>
                       </TableCell>

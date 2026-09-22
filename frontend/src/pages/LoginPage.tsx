@@ -34,13 +34,13 @@ export function LoginPage() {
         },
       })
 
-      const { access_token, role } = response.data
+      const { access_token, role, employee_id } = response.data
 
       // Dispatch to Redux
       dispatch(
         loginSuccess({
           user: {
-            id: username,
+            id: employee_id,
             name: username.charAt(0).toUpperCase() + username.slice(1),
             role: role.toUpperCase() as Role,
           },

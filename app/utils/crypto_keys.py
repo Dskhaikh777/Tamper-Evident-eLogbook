@@ -44,6 +44,8 @@ def generate_ed25519_keypair() -> tuple[str, str]:
 
 # ── Canonical payload construction ───────────────────────────────────────────
 
+import json
+
 def build_signing_payload(
     operator_id: str,
     action_type: str,
@@ -51,19 +53,14 @@ def build_signing_payload(
 ) -> str:
     """
     Build the canonical string that operators must sign.
-
-    The payload is ``operator_id ‖ \\x1f ‖ action_type ‖ \\x1f ‖ data_payload``.
-    This must match **exactly** on both client and server side.
-
-    Args:
-        operator_id:  Unique operator identifier.
-        action_type:  Category of the action performed.
-        data_payload: Free-form description of the action.
-
-    Returns:
-        The canonical UTF-8 string to be signed.
+    Uses strict JSON serialization with sorted keys.
     """
-    return _FIELD_SEPARATOR.join([operator_id, action_type, data_payload])
+    payload_dict = {
+        "action_type": action_type,
+        "data_payload": data_payload,
+        "operator_id": operator_id,
+    }
+    return json.dumps(payload_dict, separators=(',', ':'), sort_keys=True)
 
 
 # ── Signing ──────────────────────────────────────────────────────────────────
@@ -95,23 +92,20 @@ def verify_signature(
 ) -> bool:
     """
     Verify an Ed25519 signature against a payload and public key.
-
-    Args:
-        public_key_hex: 64-character hex string of the 32-byte raw public key.
-        payload:        The canonical signed string.
-        signature_hex:  128-character hex-encoded signature.
-
-    Returns:
-        ``True`` if the signature is valid, ``False`` otherwise.
     """
     try:
         public_key = Ed25519PublicKey.from_public_bytes(
             bytes.fromhex(public_key_hex)
         )
-        public_key.verify(
-            bytes.fromhex(signature_hex),
-            payload.encode("utf-8"),
-        )
+        payload_bytes = payload.encode("utf-8")
+        signature_bytes = bytes.fromhex(signature_hex)
+        
+        print(f"[VERIFY] Payload Bytes: {payload_bytes}")
+        print(f"[VERIFY] Public Key: {public_key_hex}")
+        print(f"[VERIFY] Signature: {signature_hex}")
+        
+        public_key.verify(signature_bytes, payload_bytes)
         return True
-    except (InvalidSignature, ValueError, Exception):
+    except (InvalidSignature, ValueError, Exception) as e:
+        print(f"[VERIFY] Exception: {e}")
         return False

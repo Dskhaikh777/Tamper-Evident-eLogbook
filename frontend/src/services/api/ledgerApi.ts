@@ -7,18 +7,22 @@ export interface LogEntryRequest {
   data_payload: string
   signature: string
   public_key: string
+  raw_payload: string
 }
 
 export interface LogEntryResponse {
   id: string
-  operator_id: string
+  device_id: string
+  operator_id: number
+  operator_employee_id: string
   action_type: string
   data_payload: string
   timestamp: string
   signature: string
   public_key: string
-  previous_hash: string | null
+  previous_hash: string
   current_hash: string
+  is_chain_intact: boolean
 }
 
 export interface BreachedDecoyDetail {
@@ -49,23 +53,36 @@ export type LedgerVerificationResult =
       stored_hash: string 
     }
 
+export interface DeviceOverview {
+  id: string
+  name: string
+  model_number: string
+  location: string
+  last_action_state: {
+    action: string
+    performed_by: string
+    time: string
+  } | null
+}
+
 export const ledgerApi = createApi({
   reducerPath: "ledgerApi",
   baseQuery: axiosBaseQuery(),
-  tagTypes: ["LogEntry", "ThreatStatus"],
+  tagTypes: ["LogEntry", "ThreatStatus", "Devices"],
   endpoints: (builder) => ({
-    createLog: builder.mutation<LogEntryResponse, LogEntryRequest>({
+    createLog: builder.mutation<LogEntryResponse, LogEntryRequest & { device_id: string }>({
       query: (data) => ({
-        url: "/logs/",
+        url: `/ledger/${data.device_id}`,
         method: "POST",
         data,
       }),
-      invalidatesTags: ["LogEntry"],
+      invalidatesTags: ["LogEntry", "Devices"],
     }),
-    fetchLogs: builder.query<LogEntryResponse[], void>({
-      query: () => ({
+    fetchLogs: builder.query<LogEntryResponse[], { device_id?: string } | void>({
+      query: (params) => ({
         url: "/logs/",
         method: "GET",
+        params: params || undefined,
       }),
       providesTags: ["LogEntry"],
     }),
@@ -93,6 +110,28 @@ export const ledgerApi = createApi({
       }),
       providesTags: ["ThreatStatus"],
     }),
+    getDevicesOverview: builder.query<DeviceOverview[], void>({
+      query: () => ({
+        url: "/devices/overview",
+        method: "GET",
+      }),
+      providesTags: ["Devices"],
+    }),
+    createUser: builder.mutation<any, any>({
+      query: (data) => ({
+        url: "/admin/users",
+        method: "POST",
+        data,
+      }),
+    }),
+    createDevice: builder.mutation<any, any>({
+      query: (data) => ({
+        url: "/admin/devices",
+        method: "POST",
+        data,
+      }),
+      invalidatesTags: ["Devices"],
+    }),
   }),
 })
 
@@ -101,5 +140,8 @@ export const {
   useFetchLogsQuery, 
   useLazyVerifyLedgerQuery,
   useTriggerHoneypotTrapMutation,
-  useFetchThreatStatusQuery 
+  useFetchThreatStatusQuery,
+  useGetDevicesOverviewQuery,
+  useCreateUserMutation,
+  useCreateDeviceMutation
 } = ledgerApi

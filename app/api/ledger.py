@@ -105,17 +105,36 @@ def append_to_device_chain(
         )
 
     # ── 2. Verify Ed25519 signature ──────────────────────────────────────
-    # The canonical payload uses the AUTHENTICATED user's employee_id —
-    # this is what the client must sign on their side.
-    canonical_payload = build_signing_payload(
+    # Fetch and verify the EXACT raw JSON string as it was originally signed,
+    # bypassing Pydantic's .model_dump_json() or Python's json.dumps() during the verify() step.
+    raw_signed_string = entry.raw_payload
+
+    # Reconstruct server-side expected string just for printing/comparison
+    string_being_verified = build_signing_payload(
         operator_id=current_user.employee_id,
         action_type=entry.action_type,
         data_payload=entry.data_payload,
     )
+    print(f"SIGNED_STRING: {raw_signed_string}")
+    print(f"VERIFYING_STRING: {string_being_verified}")
+
+    # Validate that the client's raw payload matches the authenticated context
+    import json
+    try:
+        parsed_raw = json.loads(raw_signed_string)
+        if (parsed_raw.get("operator_id") != current_user.employee_id or
+            parsed_raw.get("action_type") != entry.action_type or
+            parsed_raw.get("data_payload") != entry.data_payload):
+            raise ValueError("Payload contents mismatch")
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Raw payload does not match the provided fields.",
+        )
 
     if not verify_signature(
         public_key_hex=entry.public_key,
-        payload=canonical_payload,
+        payload=raw_signed_string,
         signature_hex=entry.signature,
     ):
         raise HTTPException(
@@ -129,10 +148,9 @@ def append_to_device_chain(
             ),
         )
 
-    # ── 3. Fetch previous_hash from THIS DEVICE's chain ──────────────────
+    # ── 3. Fetch previous_hash from the ENTIRE FACILITY'S chain ──────────────────
     latest_block = (
         db.query(AuditLog)
-        .filter(AuditLog.device_id == device_id)
         .order_by(AuditLog.id.desc())
         .first()
     )
@@ -217,11 +235,24 @@ def get_device_chain(
         )
 
     # ── Fetch the full chain in chronological order ──────────────────────
-    chain = (
+    # Because the chain is now strictly GLOBAL, we must evaluate integrity globally
+    # before returning the filtered device subset.
+    all_records = (
         db.query(AuditLog)
-        .filter(AuditLog.device_id == device_id)
         .order_by(AuditLog.id.asc())
         .all()
     )
+
+    from app.models.ledger import GENESIS_HASH
+    last_hash = GENESIS_HASH
+    for record in all_records:
+        if record.previous_hash == last_hash:
+            record.is_chain_intact = True
+        else:
+            record.is_chain_intact = False
+        last_hash = record.current_hash
+
+    # Filter down to the specific device for the frontend
+    chain = [r for r in all_records if r.device_id == device_id]
 
     return chain
