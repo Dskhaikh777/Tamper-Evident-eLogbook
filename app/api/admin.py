@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.database import get_db
 from app.models.user import User
 from app.models.device import Device
+from app.models.honey_token import HoneyToken
 from app.api.auth import require_role, hash_password
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.device import DeviceCreate, DeviceResponse
@@ -224,3 +225,27 @@ def list_devices(
         .all()
     )
     return devices
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SOC THREAT RESET
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/soc/reset",
+    status_code=status.HTTP_200_OK,
+    summary="Reset SOC Threat Status",
+    description="Reset all honey-token probe counts to 0 and clear breach timestamps.",
+)
+def reset_soc_threats(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_role(["admin"])),
+):
+    """Reset all decoy nodes to restore system integrity to 100%."""
+    db.query(HoneyToken).update(
+        {
+            HoneyToken.accessed_count: 0,
+            HoneyToken.last_breach_timestamp: None,
+        }
+    )
+    db.commit()
+    return {"message": "SOC Threat monitoring reset to SECURE status."}

@@ -21,7 +21,7 @@ export function QRCodeGenerator({ log }: QRCodeGeneratorProps) {
 
   // Serialize the essential data into a compact JSON string
   const qrPayload = JSON.stringify({
-    o: log.operator_id,
+    o: log.operator_employee_id,
     a: log.action_type,
     d: log.data_payload,
     s: log.signature,

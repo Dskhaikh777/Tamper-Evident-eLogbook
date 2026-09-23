@@ -1,5 +1,5 @@
-import { createApi } from "@reduxjs/toolkit/query/react"
-import { axiosBaseQuery } from "./baseQuery"
+import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react"
+import type { RootState } from "@/store"
 
 export interface LogEntryRequest {
   operator_id: string
@@ -67,14 +67,23 @@ export interface DeviceOverview {
 
 export const ledgerApi = createApi({
   reducerPath: "ledgerApi",
-  baseQuery: axiosBaseQuery(),
-  tagTypes: ["LogEntry", "ThreatStatus", "Devices"],
+  baseQuery: fetchBaseQuery({
+    baseUrl: "http://localhost:8000/api/v1",
+    prepareHeaders: (headers, { getState }) => {
+      const token = (getState() as RootState).auth.accessToken
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`)
+      }
+      return headers
+    },
+  }),
+  tagTypes: ["LogEntry", "ThreatStatus", "Devices", "Users"],
   endpoints: (builder) => ({
     createLog: builder.mutation<LogEntryResponse, LogEntryRequest & { device_id: string }>({
       query: (data) => ({
         url: `/ledger/${data.device_id}`,
         method: "POST",
-        data,
+        body: data,
       }),
       invalidatesTags: ["LogEntry", "Devices"],
     }),
@@ -103,6 +112,13 @@ export const ledgerApi = createApi({
       // of the SOC Dashboard on the next poll cycle or instantly
       invalidatesTags: ["ThreatStatus"],
     }),
+    resetThreats: builder.mutation<void, void>({
+      query: () => ({
+        url: "/admin/soc/reset",
+        method: "POST",
+      }),
+      invalidatesTags: ["ThreatStatus"],
+    }),
     fetchThreatStatus: builder.query<ThreatStatus, void>({
       query: () => ({
         url: "/threat-status/",
@@ -121,14 +137,29 @@ export const ledgerApi = createApi({
       query: (data) => ({
         url: "/admin/users",
         method: "POST",
-        data,
+        body: data,
       }),
+      invalidatesTags: ["Users"],
+    }),
+    getUsers: builder.query<any[], void>({
+      query: () => ({
+        url: "/admin/users",
+        method: "GET",
+      }),
+      providesTags: ["Users"],
+    }),
+    deactivateUser: builder.mutation<any, number>({
+      query: (userId) => ({
+        url: `/admin/users/${userId}/deactivate`,
+        method: "PATCH",
+      }),
+      invalidatesTags: ["Users"],
     }),
     createDevice: builder.mutation<any, any>({
       query: (data) => ({
         url: "/admin/devices",
         method: "POST",
-        data,
+        body: data,
       }),
       invalidatesTags: ["Devices"],
     }),
@@ -143,5 +174,8 @@ export const {
   useFetchThreatStatusQuery,
   useGetDevicesOverviewQuery,
   useCreateUserMutation,
-  useCreateDeviceMutation
+  useGetUsersQuery,
+  useDeactivateUserMutation,
+  useCreateDeviceMutation,
+  useResetThreatsMutation
 } = ledgerApi

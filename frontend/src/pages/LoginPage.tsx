@@ -98,12 +98,12 @@ export function LoginPage() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">Employee ID</Label>
               <Input
                 id="username"
-                placeholder="operator"
+                placeholder="EMP-0042"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value.toUpperCase())}
                 required
                 disabled={isLoading}
               />

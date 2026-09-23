@@ -23,11 +23,14 @@ function App() {
           <Route path="/" element={<AppShell />}>
             <Route index element={<Navigate to="/keys" replace />} />
             
-            {/* All authenticated users can access keys, scan, and devices */}
+            {/* All authenticated users can access devices */}
             <Route element={<ProtectedRoute allowedRoles={['OPERATOR', 'ADMIN', 'AUDITOR', 'operator', 'admin', 'auditor']} />}>
-              <Route path="keys" element={<KeysPage />} />
-              <Route path="scan" element={<OfflineScannerPage />} />
               <Route path="devices" element={<DeviceOverview />} />
+            </Route>
+
+            {/* Operators can access keys (no admins or auditors) */}
+            <Route element={<ProtectedRoute allowedRoles={['OPERATOR', 'operator']} />}>
+              <Route path="keys" element={<KeysPage />} />
             </Route>
 
             {/* OPERATOR Only */}
@@ -38,12 +41,13 @@ function App() {
             {/* ADMIN / AUDITOR Only */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'AUDITOR', 'admin', 'auditor']} />}>
               <Route path="ledger" element={<LedgerViewPage />} />
-              <Route path="threats" element={<ThreatDashboardPage />} />
+              <Route path="scan" element={<OfflineScannerPage />} />
             </Route>
 
             {/* ADMIN Only */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'admin']} />}>
               <Route path="admin" element={<AdminDashboard />} />
+              <Route path="threats" element={<ThreatDashboardPage />} />
             </Route>
           </Route>
         </Routes>

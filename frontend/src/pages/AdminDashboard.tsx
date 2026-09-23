@@ -22,9 +22,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-import { useCreateUserMutation, useCreateDeviceMutation } from "@/services/api/ledgerApi"
+import { 
+  useCreateUserMutation, 
+  useCreateDeviceMutation,
+  useGetUsersQuery,
+  useDeactivateUserMutation
+} from "@/services/api/ledgerApi"
 
 const operatorSchema = z.object({
   full_name: z.string().min(2, "Name must be at least 2 characters."),
@@ -41,7 +55,9 @@ const deviceSchema = z.object({
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<"operators" | "devices">("operators")
+  const { data: users, isLoading: isLoadingUsers, refetch: refetchUsers } = useGetUsersQuery()
   const [createUser, { isLoading: isCreatingUser }] = useCreateUserMutation()
+  const [deactivateUser] = useDeactivateUserMutation()
   const [createDevice, { isLoading: isCreatingDevice }] = useCreateDeviceMutation()
 
   const operatorForm = useForm<z.infer<typeof operatorSchema>>({
@@ -69,10 +85,32 @@ export function AdminDashboard() {
       toast.success("User Provisioned", {
         description: `Successfully provisioned ${values.employee_id} as ${values.role}.`,
       })
-      operatorForm.reset()
+      // Force manual refetch to guarantee the table updates
+      await refetchUsers()
+      // Explicitly reset form fields to empty strings
+      operatorForm.reset({
+        full_name: "",
+        employee_id: "",
+        password: "",
+        role: "operator",
+      })
     } catch (error: any) {
       toast.error("Provisioning Failed", {
         description: error?.data?.detail || "Could not provision user.",
+      })
+    }
+  }
+
+  async function handleDeactivateUser(userId: number, employeeId: string) {
+    if (!confirm(`Are you sure you want to deactivate ${employeeId}?`)) return
+    try {
+      await deactivateUser(userId).unwrap()
+      toast.success("User Deactivated", {
+        description: `Successfully deactivated ${employeeId}.`,
+      })
+    } catch (error: any) {
+      toast.error("Deactivation Failed", {
+        description: error?.data?.detail || "Could not deactivate user.",
       })
     }
   }
@@ -114,7 +152,7 @@ export function AdminDashboard() {
             }`}
             onClick={() => setActiveTab("operators")}
           >
-            <UserPlus className="w-4 h-4" /> Add Operator
+            <UserPlus className="w-4 h-4" /> Add User
           </button>
           <button
             type="button"
@@ -128,13 +166,82 @@ export function AdminDashboard() {
         </div>
 
         {activeTab === "operators" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Provision New Operator</CardTitle>
-              <CardDescription>
-                Create a new user account with role-based access control.
-              </CardDescription>
-            </CardHeader>
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Manage Users</CardTitle>
+                <CardDescription>
+                  List of all registered system personnel (Admins, Auditors, and Operators).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Employee ID</TableHead>
+                        <TableHead>Full Name</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoadingUsers ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
+                          </TableCell>
+                        </TableRow>
+                      ) : users && users.length > 0 ? (
+                        users.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell className="font-medium">{user.employee_id}</TableCell>
+                            <TableCell>{user.full_name}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="capitalize">
+                                {user.role}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {user.is_active ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20">Active</Badge>
+                              ) : (
+                                <Badge variant="secondary">Deactivated</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                disabled={!user.is_active}
+                                onClick={() => handleDeactivateUser(user.id, user.employee_id)}
+                              >
+                                Deactivate
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                            No operators found.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Provision New User</CardTitle>
+                <CardDescription>
+                  Create a new user account with role-based access control.
+                </CardDescription>
+              </CardHeader>
             <CardContent>
               <Form {...operatorForm}>
                 <form onSubmit={operatorForm.handleSubmit(onOperatorSubmit)} className="space-y-4">
@@ -207,7 +314,8 @@ export function AdminDashboard() {
               </Form>
             </CardContent>
           </Card>
-        )}
+        </div>
+      )}
 
         {activeTab === "devices" && (
           <Card>

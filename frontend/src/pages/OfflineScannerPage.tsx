@@ -141,6 +141,7 @@ export function OfflineScannerPage() {
         data_payload: payload.d,
       })
 
+      console.log("SCANNER_VERIFYING_STRING", canonicalPayload)
       const isValid = await verifySignature(canonicalPayload, payload.s, payload.p)
       setVerificationResult(isValid ? "verified" : "failed")
     } catch (error) {
