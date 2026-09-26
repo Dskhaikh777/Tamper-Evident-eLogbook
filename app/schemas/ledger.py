@@ -63,6 +63,10 @@ class LogCreate(BaseModel):
         ),
         examples=["a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"],
     )
+    raw_payload: str = Field(
+        ...,
+        description="The exact raw JSON string that was signed by the client.",
+    )
     signature: str = Field(
         ...,
         min_length=128,
@@ -93,6 +97,7 @@ class LogResponse(BaseModel):
     id: int
     device_id: UUID
     operator_id: int
+    operator_employee_id: str
     timestamp: datetime
     action_type: str
     data_payload: str
@@ -100,6 +105,7 @@ class LogResponse(BaseModel):
     signature: str
     previous_hash: str
     current_hash: str
+    is_chain_intact: bool = Field(default=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

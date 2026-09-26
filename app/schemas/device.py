@@ -70,39 +70,19 @@ class DeviceResponse(BaseModel):
 # ── Dynamic State Injection ──────────────────────────────────────────────────
 
 
-class LastActionState(BaseModel):
+class LastOperation(BaseModel):
     """
     Computed snapshot of the most recent operation performed on a device.
-
-    This is NOT stored in the database — it is dynamically computed by
-    querying the latest ``AuditLog`` entry for a given device.
     """
-
-    last_action: str = Field(
-        ...,
-        description="Action type of the most recent log entry.",
-        examples=["Calibration"],
-    )
-    last_operator_name: str = Field(
-        ...,
-        description="Full name and employee ID of the operator.",
-        examples=["Dr. Aisha Khan (EMP-0042)"],
-    )
-    last_timestamp: datetime = Field(
-        ...,
-        description="UTC timestamp of the most recent action.",
-    )
+    action: str = Field(..., description="Action type of the most recent log entry.")
+    operator: str = Field(..., description="Operator who performed the action.")
+    timestamp: datetime = Field(..., description="UTC timestamp of the most recent action.")
 
 
 class DeviceOverviewResponse(BaseModel):
     """
     Device record enriched with its dynamically-computed last action state.
-
-    Returned by the Operator's device overview endpoint.  If a device
-    has no audit-log entries yet, ``last_state`` is ``None`` and
-    ``status_label`` reads ``"No Operations Yet"``.
     """
-
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -113,9 +93,8 @@ class DeviceOverviewResponse(BaseModel):
     status_label: str = Field(
         ...,
         description="Human-readable device status summary.",
-        examples=["Last: Calibration by EMP-0042", "No Operations Yet"],
     )
-    last_state: LastActionState | None = Field(
+    last_operation: LastOperation | None = Field(
         default=None,
         description="Computed last-action snapshot, or null if no logs exist.",
     )

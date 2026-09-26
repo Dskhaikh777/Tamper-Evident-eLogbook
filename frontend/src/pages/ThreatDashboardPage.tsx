@@ -1,4 +1,4 @@
-import { useFetchThreatStatusQuery, useTriggerHoneypotTrapMutation } from "@/services/api/ledgerApi"
+import { useFetchThreatStatusQuery, useTriggerHoneypotTrapMutation, useResetThreatsMutation } from "@/services/api/ledgerApi"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Activity, ShieldAlert, ShieldCheck, AlertOctagon, Skull } from "lucide-react"
@@ -15,6 +15,20 @@ export function ThreatDashboardPage() {
   })
 
   const [triggerHoneypot, { isLoading: isAttacking }] = useTriggerHoneypotTrapMutation()
+  const [resetThreats, { isLoading: isResetting }] = useResetThreatsMutation()
+
+  const handleResetThreats = async () => {
+    try {
+      await resetThreats().unwrap()
+      toast.success("Simulation Reset", {
+        description: "All decoy nodes have been restored to 100% integrity."
+      })
+    } catch (err) {
+      toast.error("Failed to reset simulation", {
+        description: "Could not reach the administration endpoint."
+      })
+    }
+  }
 
   const handleSimulateAttack = async () => {
     try {
@@ -79,16 +93,28 @@ export function ThreatDashboardPage() {
           <p className="text-muted-foreground text-sm mt-1">
             Real-time monitoring of deployed honey-tokens and decoy nodes.
           </p>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleSimulateAttack}
-            disabled={isAttacking}
-            className="mt-4 border-destructive/50 text-destructive hover:bg-destructive/10"
-          >
-            <Skull className={`mr-2 h-4 w-4 ${isAttacking ? 'animate-pulse' : ''}`} />
-            Simulate Hostile Intrusion
-          </Button>
+          <div className="flex items-center gap-4 mt-4">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleSimulateAttack}
+              disabled={isAttacking || isResetting}
+              className="border-destructive/50 text-destructive hover:bg-destructive/10"
+            >
+              <Skull className={`mr-2 h-4 w-4 ${isAttacking ? 'animate-pulse' : ''}`} />
+              Simulate Hostile Intrusion
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleResetThreats}
+              disabled={isAttacking || isResetting}
+              className="border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10"
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Reset Simulation
+            </Button>
+          </div>
         </div>
         
         <Card className={`w-full md:w-auto border-2 ${isCritical ? 'border-destructive' : 'border-emerald-500'}`}>

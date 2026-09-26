@@ -47,7 +47,7 @@ const logEntrySchema = z.object({
   }, "Payload should be structured text or valid JSON."),
 })
 
-export function LogEntryForm() {
+export function LogEntryForm({ deviceId }: { deviceId?: string }) {
   const { user, keyPair } = useSelector((state: RootState) => state.auth)
   const [createLog, { isLoading }] = useCreateLogMutation()
   const [isSigning, setIsSigning] = useState(false)
@@ -80,6 +80,13 @@ export function LogEntryForm() {
   }
 
   async function onSubmit(values: z.infer<typeof logEntrySchema>) {
+    if (!deviceId) {
+      toast.error("Device Context Missing", {
+        description: "Cannot append log without a target device UUID.",
+      })
+      return
+    }
+
     try {
       setIsSigning(true)
 
@@ -95,11 +102,13 @@ export function LogEntryForm() {
 
       // 3. Dispatch the createLog mutation
       await createLog({
+        device_id: deviceId,
         operator_id: user!.id,
         action_type: values.action_type,
         data_payload: values.data_payload,
         signature,
         public_key: keyPair!.publicKey,
+        raw_payload: canonicalPayload,
       }).unwrap()
 
       toast.success("Cryptographic Log Appended to Ledger", {

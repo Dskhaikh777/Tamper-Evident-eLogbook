@@ -18,6 +18,7 @@ been updated to compile against the new schema.
 
 from datetime import datetime, timezone
 from typing import List, Union
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -101,10 +102,9 @@ def create_log(
             ),
         )
 
-    # --- 1. Determine the previous hash (PER-DEVICE) ---------------------
+    # --- 1. Determine the previous hash (GLOBAL) ---------------------
     latest_record = (
         db.query(AuditLog)
-        .filter(AuditLog.device_id == entry.device_id)
         .order_by(AuditLog.id.desc())
         .first()
     )
@@ -198,16 +198,55 @@ def generate_keys():
         "NOTE: Will be scoped per-device in Phase 3."
     ),
 )
-def get_all_logs(db: Session = Depends(get_db)):
+def get_all_logs(
+    device_id: UUID | None = None,
+    db: Session = Depends(get_db)
+):
     """
     Fetch and return the full, ordered ledger for display or audit.
+    Optionally filter by a specific device.
     """
-    records = (
-        db.query(AuditLog)
-        .order_by(AuditLog.id.asc())
-        .all()
-    )
-    return records
+    # Evaluate chain integrity globally first
+    all_records = db.query(AuditLog).order_by(AuditLog.id.asc()).all()
+    
+    from app.models.ledger import GENESIS_HASH
+    
+    last_hash = GENESIS_HASH
+    for record in all_records:
+        if record.previous_hash == last_hash:
+            record.is_chain_intact = True
+        else:
+            record.is_chain_intact = False
+        last_hash = record.current_hash
+
+    # Then filter if device_id is provided
+    if device_id:
+        return [r for r in all_records if r.device_id == device_id]
+        
+    return all_records
+
+
+# ── POST /admin/reset-ledger ────────────────────────────────────────────────
+@router.post(
+    "/admin/reset-ledger",
+    status_code=status.HTTP_200_OK,
+    summary="TRUNCATE the entire audit ledger (Development/Admin Utility)",
+    description=(
+        "WARNING: This endpoint permanently deletes all records in the "
+        "AuditLog table. This is used to reset the global hash chain during "
+        "development when the chain is fractured."
+    ),
+)
+def reset_ledger(
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role(["admin"])),
+):
+    """
+    Truncate the AuditLog table.
+    """
+    db.query(AuditLog).delete()
+    db.commit()
+    return {"message": "Audit ledger has been successfully truncated and reset to genesis state."}
 
 
 # ── GET /verify-ledger/ ─────────────────────────────────────────────────────

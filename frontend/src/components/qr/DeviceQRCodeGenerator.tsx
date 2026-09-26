@@ -1,5 +1,4 @@
 import { QRCodeCanvas } from "qrcode.react"
-import type { LogEntryResponse } from "@/services/api/ledgerApi"
 import { Button } from "@/components/ui/button"
 import { QrCode, Download } from "lucide-react"
 import {
@@ -11,21 +10,19 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { useRef } from "react"
+import type { DeviceOverviewResponse } from "@/services/api/ledgerApi"
 
-interface QRCodeGeneratorProps {
-  log: LogEntryResponse
+interface DeviceQRCodeGeneratorProps {
+  device: DeviceOverviewResponse
 }
 
-export function QRCodeGenerator({ log }: QRCodeGeneratorProps) {
+export function DeviceQRCodeGenerator({ device }: DeviceQRCodeGeneratorProps) {
   const qrRef = useRef<HTMLDivElement>(null)
 
   // Serialize the essential data into a compact JSON string
   const qrPayload = JSON.stringify({
-    o: log.operator_employee_id,
-    a: log.action_type,
-    d: log.data_payload,
-    s: log.signature,
-    p: log.public_key,
+    type: "device_ledger",
+    device_id: device.id,
   })
 
   const downloadQR = () => {
@@ -36,7 +33,7 @@ export function QRCodeGenerator({ log }: QRCodeGeneratorProps) {
     const url = canvas.toDataURL("image/png")
     const link = document.createElement("a")
     link.href = url
-    link.download = `log-qr-${log.id}.png`
+    link.download = `device-qr-${device.id}.png`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -47,14 +44,14 @@ export function QRCodeGenerator({ log }: QRCodeGeneratorProps) {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <QrCode className="h-4 w-4 mr-2" />
-          QR
+          Generate QR
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Air-Gapped Verification QR</DialogTitle>
+          <DialogTitle>Hardware Binding QR</DialogTitle>
           <DialogDescription>
-            Scan this code with the offline verification module to authenticate this record's signature mathematically.
+            Print and affix this QR code to the physical hardware. Scanning it will open this device's immutable ledger.
           </DialogDescription>
         </DialogHeader>
         
@@ -70,7 +67,7 @@ export function QRCodeGenerator({ log }: QRCodeGeneratorProps) {
             />
           </div>
           <div className="text-sm text-center text-muted-foreground break-all max-w-[300px]">
-            Payload contains cryptographic signature and public key.
+            Device ID: {device.id}
           </div>
         </div>
 

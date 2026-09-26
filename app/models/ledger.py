@@ -148,6 +148,10 @@ class AuditLog(Base):
         back_populates="audit_logs",
     )
 
+    @property
+    def operator_employee_id(self) -> str:
+        return self.operator.employee_id if self.operator else "UNKNOWN"
+
     # ── Composite Indexes ────────────────────────────────────────────────
     # Optimise the critical query: "get the latest log for device X"
     # This is hit on every new log append (to fetch previous_hash) and

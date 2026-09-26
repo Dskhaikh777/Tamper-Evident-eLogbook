@@ -1,7 +1,10 @@
+import { useParams } from "react-router-dom"
 import { LogEntryForm } from "@/components/entry/LogEntryForm"
 import { ShieldCheck } from "lucide-react"
 
 export function NewLogEntryPage() {
+  const { deviceId } = useParams()
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center space-x-3 mb-8 border-b pb-4">
@@ -16,7 +19,7 @@ export function NewLogEntryPage() {
         </div>
       </div>
       
-      <LogEntryForm />
+      <LogEntryForm deviceId={deviceId} />
     </div>
   )
 }

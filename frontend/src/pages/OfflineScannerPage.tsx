@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react"
+import { useNavigate } from "react-router-dom"
 import { Html5Qrcode } from "html5-qrcode"
 import { createCanonicalPayload, verifySignature } from "@/lib/crypto"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -110,14 +111,23 @@ export function OfflineScannerPage() {
     }
   }, [scannerActive])
 
+  const navigate = useNavigate()
+
   function processScannedText(decodedText: string) {
     try {
-      const payload: ScannedPayload = JSON.parse(decodedText)
-      if (!payload.o || !payload.a || !payload.d || !payload.s || !payload.p) {
+      const payload = JSON.parse(decodedText)
+      
+      if (payload.type === "device_ledger" && payload.device_id) {
+        navigate(`/ledger?device_id=${payload.device_id}`)
+        return
+      }
+
+      const scannedPayload: ScannedPayload = payload
+      if (!scannedPayload.o || !scannedPayload.a || !scannedPayload.d || !scannedPayload.s || !scannedPayload.p) {
         throw new Error("Invalid payload structure")
       }
-      setScanResult(payload)
-      verifyScannedPayload(payload)
+      setScanResult(scannedPayload)
+      verifyScannedPayload(scannedPayload)
     } catch (err) {
       setVerificationResult("failed")
     }
@@ -131,6 +141,7 @@ export function OfflineScannerPage() {
         data_payload: payload.d,
       })
 
+      console.log("SCANNER_VERIFYING_STRING", canonicalPayload)
       const isValid = await verifySignature(canonicalPayload, payload.s, payload.p)
       setVerificationResult(isValid ? "verified" : "failed")
     } catch (error) {

@@ -26,6 +26,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.database import get_db
 from app.models.user import User
@@ -196,7 +197,7 @@ def login_for_access_token(
     # OAuth2PasswordRequestForm uses `username` field — we map it to employee_id.
     user: User | None = (
         db.query(User)
-        .filter(User.employee_id == form_data.username)
+        .filter(func.lower(User.employee_id) == form_data.username.lower())
         .first()
     )
 

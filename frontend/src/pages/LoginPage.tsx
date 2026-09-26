@@ -34,13 +34,13 @@ export function LoginPage() {
         },
       })
 
-      const { access_token, role } = response.data
+      const { access_token, role, employee_id } = response.data
 
       // Dispatch to Redux
       dispatch(
         loginSuccess({
           user: {
-            id: username,
+            id: employee_id,
             name: username.charAt(0).toUpperCase() + username.slice(1),
             role: role.toUpperCase() as Role,
           },
@@ -98,12 +98,12 @@ export function LoginPage() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">Employee ID</Label>
               <Input
                 id="username"
-                placeholder="operator"
+                placeholder="EMP-0042"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value.toUpperCase())}
                 required
                 disabled={isLoading}
               />

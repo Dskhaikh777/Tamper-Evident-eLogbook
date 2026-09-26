@@ -1,5 +1,5 @@
-import { createApi } from "@reduxjs/toolkit/query/react"
-import { axiosBaseQuery } from "./baseQuery"
+import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react"
+import type { RootState } from "@/store"
 
 export interface LogEntryRequest {
   operator_id: string
@@ -7,18 +7,22 @@ export interface LogEntryRequest {
   data_payload: string
   signature: string
   public_key: string
+  raw_payload: string
 }
 
 export interface LogEntryResponse {
   id: string
-  operator_id: string
+  device_id: string
+  operator_id: number
+  operator_employee_id: string
   action_type: string
   data_payload: string
   timestamp: string
   signature: string
   public_key: string
-  previous_hash: string | null
+  previous_hash: string
   current_hash: string
+  is_chain_intact: boolean
 }
 
 export interface BreachedDecoyDetail {
@@ -49,23 +53,45 @@ export type LedgerVerificationResult =
       stored_hash: string 
     }
 
+export interface DeviceOverview {
+  id: string
+  name: string
+  model_number: string
+  location: string
+  last_action_state: {
+    action: string
+    performed_by: string
+    time: string
+  } | null
+}
+
 export const ledgerApi = createApi({
   reducerPath: "ledgerApi",
-  baseQuery: axiosBaseQuery(),
-  tagTypes: ["LogEntry", "ThreatStatus"],
+  baseQuery: fetchBaseQuery({
+    baseUrl: "http://localhost:8000/api/v1",
+    prepareHeaders: (headers, { getState }) => {
+      const token = (getState() as RootState).auth.accessToken
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`)
+      }
+      return headers
+    },
+  }),
+  tagTypes: ["LogEntry", "ThreatStatus", "Devices", "Users"],
   endpoints: (builder) => ({
-    createLog: builder.mutation<LogEntryResponse, LogEntryRequest>({
+    createLog: builder.mutation<LogEntryResponse, LogEntryRequest & { device_id: string }>({
       query: (data) => ({
-        url: "/logs/",
+        url: `/ledger/${data.device_id}`,
         method: "POST",
-        data,
+        body: data,
       }),
-      invalidatesTags: ["LogEntry"],
+      invalidatesTags: ["LogEntry", "Devices"],
     }),
-    fetchLogs: builder.query<LogEntryResponse[], void>({
-      query: () => ({
+    fetchLogs: builder.query<LogEntryResponse[], { device_id?: string } | void>({
+      query: (params) => ({
         url: "/logs/",
         method: "GET",
+        params: params || undefined,
       }),
       providesTags: ["LogEntry"],
     }),
@@ -86,12 +112,56 @@ export const ledgerApi = createApi({
       // of the SOC Dashboard on the next poll cycle or instantly
       invalidatesTags: ["ThreatStatus"],
     }),
+    resetThreats: builder.mutation<void, void>({
+      query: () => ({
+        url: "/admin/soc/reset",
+        method: "POST",
+      }),
+      invalidatesTags: ["ThreatStatus"],
+    }),
     fetchThreatStatus: builder.query<ThreatStatus, void>({
       query: () => ({
         url: "/threat-status/",
         method: "GET",
       }),
       providesTags: ["ThreatStatus"],
+    }),
+    getDevicesOverview: builder.query<DeviceOverview[], void>({
+      query: () => ({
+        url: "/devices/overview",
+        method: "GET",
+      }),
+      providesTags: ["Devices"],
+    }),
+    createUser: builder.mutation<any, any>({
+      query: (data) => ({
+        url: "/admin/users",
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["Users"],
+    }),
+    getUsers: builder.query<any[], void>({
+      query: () => ({
+        url: "/admin/users",
+        method: "GET",
+      }),
+      providesTags: ["Users"],
+    }),
+    deactivateUser: builder.mutation<any, number>({
+      query: (userId) => ({
+        url: `/admin/users/${userId}/deactivate`,
+        method: "PATCH",
+      }),
+      invalidatesTags: ["Users"],
+    }),
+    createDevice: builder.mutation<any, any>({
+      query: (data) => ({
+        url: "/admin/devices",
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["Devices"],
     }),
   }),
 })
@@ -101,5 +171,11 @@ export const {
   useFetchLogsQuery, 
   useLazyVerifyLedgerQuery,
   useTriggerHoneypotTrapMutation,
-  useFetchThreatStatusQuery 
+  useFetchThreatStatusQuery,
+  useGetDevicesOverviewQuery,
+  useCreateUserMutation,
+  useGetUsersQuery,
+  useDeactivateUserMutation,
+  useCreateDeviceMutation,
+  useResetThreatsMutation
 } = ledgerApi
